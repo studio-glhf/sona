@@ -584,7 +584,7 @@ export async function createApp(options: AppOptions) {
   );
   app.post("/api/connections/bridge", async () => connections.probeCodex());
   app.post("/api/connections/google-calendar", async () =>
-    connections.importDefinition({
+    connections.importLocalDefinition({
       ...googleCalendarDefinition(),
       ...(env.GOOGLE_CALENDAR_ID
         ? { resourceBindings: { "test-calendar": env.GOOGLE_CALENDAR_ID } }

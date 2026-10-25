@@ -127,6 +127,11 @@ export function importPlugin(
   const walk = (item: unknown): void => {
     if (!item || typeof item !== "object") return;
     for (const [key, v] of Object.entries(item)) {
+      if (["tokenEnv", "clientIdEnv", "clientSecretEnv"].includes(key))
+        throw new ConnectionError(
+          "manifest-credential-binding",
+          "Imported metadata cannot choose server credentials. Use a reviewed private connection binding or the built-in connection setup.",
+        );
       if (
         forbidden.includes(key) ||
         (/api.?key|password|secret/i.test(key) && !key.endsWith("Env"))
@@ -139,7 +144,25 @@ export function importPlugin(
     }
   };
   walk(object);
-  if ("route" in object) return [validateDefinition(object)];
+  const external = (value: unknown): ConnectionDefinition => {
+    const definition = validateDefinition(value);
+    if (
+      definition.tokenEnv ||
+      definition.oauth?.clientIdEnv ||
+      definition.oauth?.clientSecretEnv
+    )
+      throw new ConnectionError(
+        "manifest-credential-binding",
+        "Imported metadata cannot choose server credentials. Use a reviewed private connection binding or the built-in connection setup.",
+      );
+    return {
+      ...definition,
+      instructionsApproved: false,
+      tools: {},
+      resourceBindings: undefined,
+    };
+  };
+  if ("route" in object) return [external(object)];
   const serverMap =
     object.mcpServers ??
     (object.mcp as Record<string, unknown> | undefined)?.mcpServers;
@@ -163,7 +186,7 @@ export function importPlugin(
         "manifest-transport",
         "This release imports remote HTTP MCP definitions. It does not execute plugin commands.",
       );
-    return validateDefinition({
+    return external({
       id: name,
       name: typeof object.name === "string" ? object.name : name,
       route: "mcp",

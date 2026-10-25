@@ -56,8 +56,21 @@ export class ConnectionManager {
     this.bridge = options.codex ?? new CodexBridge();
     for (const saved of options.records ?? []) {
       const definition = validateDefinition(this.definition(saved));
+      const reviewed = saved.reviewVersion === 1;
       this.records.set(saved.id, {
         ...definition,
+        // Legacy imports cannot prove that credential bindings or policies were reviewed.
+        ...(!reviewed
+          ? {
+              tools: {},
+              instructionsApproved: false,
+              resourceBindings: undefined,
+            }
+          : {}),
+        reviewVersion: 1,
+        credentialBindingHash: reviewed
+          ? saved.credentialBindingHash
+          : undefined,
         status: "needs-verification",
         accountVerified: false,
         discoveredTools: [],
@@ -77,6 +90,8 @@ export class ConnectionManager {
       error: ________,
       authorizationUrl: _________,
       reuseVerified: __________,
+      reviewVersion: _review,
+      credentialBindingHash: _binding,
       ...definition
     } = record;
     return definition;
@@ -90,7 +105,8 @@ export class ConnectionManager {
   private async save(record: ConnectionRecord): Promise<void> {
     // The authorization URL contains transient OAuth state and must not enter durable records.
     const { authorizationUrl: _, ...durable } = record;
-    await this.options.persistence?.save(structuredClone(durable));
+    // Optional runtime fields are cleared with undefined; durable metadata is JSON.
+    await this.options.persistence?.save(JSON.parse(JSON.stringify(durable)));
   }
   list(): ConnectionRecord[] {
     return [...this.records.values()].map((x) => this.getPublic(x.id));
@@ -104,7 +120,45 @@ export class ConnectionManager {
     value: unknown,
     source?: string,
   ): Promise<ConnectionRecord[]> {
-    const definitions = importPlugin(value, source);
+    return this.addDefinitions(importPlugin(value, source), false);
+  }
+  /** Only owner-authored server bindings, never browser/published JSON imports. */
+  async importLocalDefinition(value: unknown): Promise<ConnectionRecord[]> {
+    return this.addDefinitions([validateDefinition(value)], true);
+  }
+  private credentialScope(
+    definition: ConnectionDefinition,
+  ): string | undefined {
+    if (
+      !definition.tokenEnv &&
+      !definition.oauth?.clientIdEnv &&
+      !definition.oauth?.clientSecretEnv
+    )
+      return undefined;
+    return hash(
+      JSON.parse(
+        JSON.stringify({
+          route: definition.route,
+          endpoint: definition.endpoint ?? null,
+          codexServer: definition.codexServer ?? null,
+          tokenEnv: definition.tokenEnv ?? null,
+          oauth: definition.oauth ?? null,
+        }),
+      ),
+    );
+  }
+  private assertCredentialBinding(record: ConnectionRecord): void {
+    const expected = this.credentialScope(this.definition(record));
+    if (expected && record.credentialBindingHash !== expected)
+      throw new ConnectionError(
+        "credential-binding",
+        "This connection needs reviewed server credential bindings. Remove and add the built-in connection again, or load an owner-reviewed private binding.",
+      );
+  }
+  private async addDefinitions(
+    definitions: ConnectionDefinition[],
+    local: boolean,
+  ): Promise<ConnectionRecord[]> {
     const records: ConnectionRecord[] = [];
     for (const definition of definitions) {
       if (this.records.has(definition.id))
@@ -114,6 +168,10 @@ export class ConnectionManager {
         );
       const record: ConnectionRecord = {
         ...definition,
+        reviewVersion: 1,
+        credentialBindingHash: local
+          ? this.credentialScope(definition)
+          : undefined,
         status: "needs-verification",
         accountVerified: false,
         discoveredTools: [],
@@ -136,9 +194,18 @@ export class ConnectionManager {
         "identifier",
         "The connection identifier cannot change.",
       );
+    const credentialScope = this.credentialScope(definition);
+    if (credentialScope && credentialScope !== current.credentialBindingHash)
+      throw new ConnectionError(
+        "credential-binding",
+        "Changing server credentials or their destination requires an owner-reviewed private binding.",
+      );
     await this.clients.get(id)?.close();
     this.clients.delete(id);
-    Object.assign(current, definition, {
+    const replacement: ConnectionRecord = {
+      ...definition,
+      reviewVersion: 1,
+      credentialBindingHash: credentialScope,
       status: "needs-verification",
       accountId: undefined,
       accountVerified: false,
@@ -146,8 +213,9 @@ export class ConnectionManager {
       lastCheckAt: undefined,
       error: undefined,
       reuseVerified: false,
-    });
-    await this.save(current);
+    };
+    this.records.set(id, replacement);
+    await this.save(replacement);
     return this.getPublic(id);
   }
   async updatePolicy(
@@ -175,6 +243,7 @@ export class ConnectionManager {
     let client = this.clients.get(id);
     if (!client) {
       const record = this.get(id);
+      this.assertCredentialBinding(record);
       client = (
         this.options.mcpFactory ?? ((d, c, e) => new McpConnection(d, c, e))
       )(this.definition(record), this.options.callbackUrl, this.env);
@@ -195,6 +264,7 @@ export class ConnectionManager {
           workspace?: string;
           verified?: boolean;
         };
+      this.assertCredentialBinding(record);
       if (record.route === "mcp") {
         const client = this.client(id);
         if (browserSessionId) client.auth.begin(browserSessionId);
@@ -251,7 +321,9 @@ export class ConnectionManager {
       record.status = url
         ? "sign-in-needed"
         : error instanceof ConnectionError &&
-            /oauth-client|oauth-secret|oauth-issuer/.test(error.code)
+            /oauth-client|oauth-secret|oauth-issuer|credential-binding/.test(
+              error.code,
+            )
           ? "needs-configuration"
           : "unavailable";
       record.error = safeError(error);
@@ -589,6 +661,7 @@ export class ConnectionManager {
           "allowlist",
           "This tool is not selected for this connection.",
         );
+      this.assertCredentialBinding(record);
       const tool = this.assertPolicy(record, request.toolName, policy);
       if (!request.operationId)
         throw new ConnectionError(

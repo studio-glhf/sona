@@ -128,7 +128,11 @@ The default callback is `http://127.0.0.1:4317/api/oauth/callback`. The portable
 The published plugin manifest lists more scopes than Sona's initial request. Sona requests selected Calendar scopes and identity access.
 Actual scope acceptance, endpoint audience, and account policy still need verification. Do not substitute the manifest's credential placeholders for your client values.
 
-OAuth tokens stay in server memory. Restarting the server can require new sign-in. Connection definitions and permissions remain saved.
+OAuth tokens stay in server memory. Restarting the server can require new sign-in. Reviewed connection definitions and permissions remain saved.
+
+Published JSON imports are descriptive metadata. They cannot select server credential environment variables, preapprove instructions or tools, or set permitted resource bindings. Review and select tools after discovery. Use the built-in Google Calendar setup for its configured client credentials. Private owner-authored bindings for the portable runtime remain a separate trusted setup path; do not use an unreviewed downloaded manifest as that file.
+
+Connections saved before the import-security update require permission review again. Legacy environment credential bindings remain blocked until replaced through the built-in setup or an owner-reviewed private binding. Remove and re-add the built-in connection if prompted. New reviewed bindings retain their exact destination and credential authority across restarts; editing their endpoint or OAuth settings requires a new private binding.
 
 Google and organization policy can restrict an OAuth grant. For an external OAuth app in Testing, refresh tokens can expire after seven days. See [Google's guidance](https://github.com/googleapis/google-api-nodejs-client#handling-refresh-tokens).
 
@@ -220,9 +224,9 @@ Export an agent with **Export agent**. Put the file outside the source checkout.
 pnpm example:agent --config /private/path/sona-agent.json --connections /private/path/bindings.json
 ```
 
-The optional bindings file contains an array of local connection definitions. Use environment-variable names for credentials. Sign in independently at the runtime's local page.
+The optional bindings file contains an array of owner-authored local connection definitions, including explicitly reviewed environment-variable credential names, permitted destinations and tool/resource policies. This file grants credential authority to those destinations, so review it before use. Sign in independently at the runtime's local page.
 
-The runtime opens local port 4320. It uses the same validator, OpenAI translation, voice coordinator, connection adapter, and action executor as Sona. Its database contains only the action journal. It does not open the study database.
+The runtime opens local port 4320. It waits for the browser media connection and confirmed provider settings before enabling microphone transmission or showing Listening. A readiness failure releases capture and ends the call. It uses the same validator, OpenAI translation, voice coordinator, connection adapter, and action executor as Sona. Its database contains only the action journal. It does not open the study database.
 
 For portable resources, give a tool a logical `resource` such as `test-calendar`. In the private connection definition, set `resourceBindings` to the actual permitted identifier. Set the matching tool policy's `resourcePointer` and `resources`. Sona resolves the binding before the proposal and approval. It does not add undocumented tool fields.
 

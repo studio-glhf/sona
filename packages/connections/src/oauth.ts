@@ -40,7 +40,9 @@ export class MemoryOAuthProvider implements OAuthClientProvider {
       url.password ||
       url.search ||
       url.hash ||
-      url.pathname !== "/api/connections/oauth/callback"
+      !["/api/oauth/callback", "/api/connections/oauth/callback"].includes(
+        url.pathname,
+      )
     )
       throw new ConnectionError(
         "oauth-callback",

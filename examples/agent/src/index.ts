@@ -50,7 +50,7 @@ if (arg("--connections")) {
   for (const definition of Array.isArray(definitions)
     ? definitions
     : [definitions])
-    await connections.importDefinition(definition);
+    await connections.importLocalDefinition(definition);
 }
 const voice = new VoiceService({
   store: memory,
@@ -110,6 +110,9 @@ app.post("/api/sessions", async (req) => {
 });
 app.post("/api/sessions/:id/connect", async (req) =>
   voice.connect((req.params as any).id, (req.body as any).sdp),
+);
+app.post("/api/sessions/:id/ready", async (req) =>
+  voice.waitUntilReady((req.params as any).id),
 );
 app.post("/api/sessions/:id/end", async (req) =>
   voice.end((req.params as any).id),
