@@ -124,17 +124,26 @@ async function fixture(page: Page) {
     HTMLMediaElement.prototype.play = async () => {};
     HTMLMediaElement.prototype.pause = () => {};
   });
-  await page.goto("/");
+  // Establish the shared cookie before the app can issue its own bootstrap.
+  // Concurrent cold bootstraps can otherwise return different security tokens.
   const boot = await (await page.request.get("/api/bootstrap")).json();
   const headers = { "x-sona-token": boot.csrfToken };
-  await page.request.put("/api/settings/credentials/openai", {
-    headers,
-    data: { apiKey: "sk-proj-synthetic_audio_lifecycle" },
-  });
-  await page.request.post("/api/agents", {
+  const credential = await page.request.put(
+    "/api/settings/credentials/openai",
+    {
+      headers,
+      data: { apiKey: "sk-proj-synthetic_audio_lifecycle" },
+    },
+  );
+  expect(
+    credential.ok(),
+    "Audio fixture credential must be configured",
+  ).toBeTruthy();
+  const agent = await page.request.post("/api/agents", {
     headers,
     data: { name: "Audio lifecycle fixture" },
   });
+  expect(agent.ok(), "Audio fixture agent must be created").toBeTruthy();
   await page.route("**/api/sessions/*/connect", (route) =>
     route.fulfill({ json: { sdp: "synthetic-answer" } }),
   );
@@ -144,7 +153,7 @@ async function fixture(page: Page) {
   await page.route("**/api/sessions/*/runtime", (route) =>
     route.fulfill({ json: { status: "connected", events: [], controls: [] } }),
   );
-  await page.reload();
+  await page.goto("/");
   await page
     .getByRole("button", { name: "Audio lifecycle fixture", exact: true })
     .first()
@@ -232,14 +241,10 @@ test("a canceled startup failure cannot stop the next session", async ({
   page,
 }) => {
   await fixture(page);
-  let release!: () => void, arrived!: () => void;
-  const arrival = new Promise<void>((r) => {
-    arrived = r;
-  });
+  let release!: () => void;
   let calls = 0;
   await page.route("**/api/sessions/*/connect", async (route) => {
     if (++calls === 1) {
-      arrived();
       await new Promise<void>((r) => {
         release = r;
       });
@@ -252,7 +257,11 @@ test("a canceled startup failure cannot stop the next session", async ({
   await page
     .getByRole("button", { name: "Start quick test", exact: true })
     .click();
-  await arrival;
+  await expect
+    .poll(() => calls, {
+      message: "The first session must reach provider connection",
+    })
+    .toBe(1);
   await page.getByRole("button", { name: "End session", exact: true }).click();
   await page
     .getByRole("button", { name: "Start quick test", exact: true })
