@@ -72,11 +72,36 @@ function stop() {
   el("start").disabled = false;
   el("status").textContent = "Session ended";
 }
+function waitForMediaConnection(connection, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    let deadline;
+    const cleanup = () => {
+      clearTimeout(deadline);
+      connection.removeEventListener("connectionstatechange", changed);
+    };
+    const changed = () => {
+      if (connection.connectionState === "connected") {
+        cleanup();
+        resolve();
+      } else if (["failed", "closed"].includes(connection.connectionState)) {
+        cleanup();
+        reject(new Error("The browser media connection failed."));
+      }
+    };
+    connection.addEventListener("connectionstatechange", changed);
+    deadline = setTimeout(() => {
+      cleanup();
+      reject(new Error("The browser media connection timed out."));
+    }, timeoutMs);
+    changed();
+  });
+}
 el("start").onclick = async () => {
   try {
     if (!el("consent").checked)
       throw new Error("Accept the processing notice first.");
     el("start").disabled = true;
+    el("status").textContent = "Connecting";
     session = await api("/sessions", { processingAccepted: true });
     stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
@@ -101,6 +126,8 @@ el("start").onclick = async () => {
       sdp: offer.sdp,
     });
     await peer.setRemoteDescription({ type: "answer", sdp: answer.sdp });
+    await waitForMediaConnection(peer);
+    await api("/sessions/" + session.id + "/ready", {});
     stream.getTracks().forEach((t) => (t.enabled = true));
     muted = false;
     el("mute").disabled = false;

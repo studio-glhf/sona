@@ -128,7 +128,11 @@ The default callback is `http://127.0.0.1:4317/api/oauth/callback`. The portable
 The published plugin manifest lists more scopes than Sona's initial request. Sona requests selected Calendar scopes and identity access.
 Actual scope acceptance, endpoint audience, and account policy still need verification. Do not substitute the manifest's credential placeholders for your client values.
 
-OAuth tokens stay in server memory. Restarting the server can require new sign-in. Connection definitions and permissions remain saved.
+OAuth tokens stay in server memory. Restarting the server can require new sign-in. Reviewed connection definitions and permissions remain saved.
+
+Published JSON imports are descriptive metadata. They cannot select server credential environment variables, preapprove instructions or tools, or set permitted resource bindings. Review and select tools after discovery. Use the built-in Google Calendar setup for its configured client credentials. Private owner-authored bindings for the portable runtime remain a separate trusted setup path; do not use an unreviewed downloaded manifest as that file.
+
+Connections saved before the import-security update require permission review again. Legacy environment credential bindings remain blocked until replaced through the built-in setup or an owner-reviewed private binding. Remove and re-add the built-in connection if prompted. New reviewed bindings retain their exact destination and credential authority across restarts; editing their endpoint or OAuth settings requires a new private binding.
 
 Google and organization policy can restrict an OAuth grant. For an external OAuth app in Testing, refresh tokens can expire after seven days. See [Google's guidance](https://github.com/googleapis/google-api-nodejs-client#handling-refresh-tokens).
 
@@ -220,9 +224,9 @@ Export an agent with **Export agent**. Put the file outside the source checkout.
 pnpm example:agent --config /private/path/sona-agent.json --connections /private/path/bindings.json
 ```
 
-The optional bindings file contains an array of local connection definitions. Use environment-variable names for credentials. Sign in independently at the runtime's local page.
+The optional bindings file contains an array of owner-authored local connection definitions, including explicitly reviewed environment-variable credential names, permitted destinations and tool/resource policies. This file grants credential authority to those destinations, so review it before use. Sign in independently at the runtime's local page.
 
-The runtime opens local port 4320. It uses the same validator, OpenAI translation, voice coordinator, connection adapter, and action executor as Sona. Its database contains only the action journal. It does not open the study database.
+The runtime opens local port 4320. It waits for the browser media connection and confirmed provider settings before enabling microphone transmission or showing Listening. A readiness failure releases capture and ends the call. It uses the same validator, OpenAI translation, voice coordinator, connection adapter, and action executor as Sona. Its database contains only the action journal. It does not open the study database.
 
 For portable resources, give a tool a logical `resource` such as `test-calendar`. In the private connection definition, set `resourceBindings` to the actual permitted identifier. Set the matching tool policy's `resourcePointer` and `resources`. Sona resolves the binding before the proposal and approval. It does not add undocumented tool fields.
 
@@ -260,3 +264,23 @@ Run `pnpm coverage:api` after a schema update. Compare the source hash and opera
 
 The API library preserves source defaults, constraints, and deprecation flags. Account access and lifecycle availability are separate checks.
 Do not infer current service availability from a successful schema compilation.
+
+## Organize your workspace
+
+Hover or focus an agent, study, or session in the left sidebar and open its three-dot action menu. Touch devices show the action button directly. Choose **Rename**, **Pin to top** / **Unpin**, or **Delete**. Names and pins remain after a reload or server restart. **Show all sessions** reveals older records.
+
+Session names organize the sidebar without changing the recorded configuration or study protocol. Agent and study renames update their current names; earlier snapshots remain fixed.
+
+Deletion requires a confirmation. Deleting a study also removes its local runs, assignments, consent records, and evidence. An agent referenced by sessions or study conditions is protected until those references are removed. Exports and actions already performed in external services are separate.
+
+The session **Delete** action is grouped below the evidence area, separate from live voice controls. The same action is available from the session's sidebar menu.
+
+Use the icon beside **Agent controls** to collapse the inspector. Select the collapsed rail to reopen it. Drag its left border to resize it on desktop; a focused border also responds to Left/Right arrows, Home, and End. Double-click the border to restore the default width. Width and collapse preferences are saved in this browser. On phones, controls open in a drawer with a dimmed backdrop; close it with its header icon, Escape, or the backdrop.
+
+## Audio device recovery
+
+When the built-in microphone and speakers are the system defaults, their named entries use the same system device path. Choosing those entries during a call does not reopen the microphone or unnecessarily switch the speaker engine.
+
+**Check microphone permission** reuses a live session input. If that input has ended, it attempts to replace it within the current voice connection. An idle check opens and releases a temporary input. A failed replacement preserves the working input and its mute preference. A speaker switch that stalls falls back to system output after three seconds.
+
+A browser microphone permission prompt can remain pending even after Sona's 15-second wait expires. Respond to the prompt or reload Sona before retrying. Sona prevents overlapping requests and releases any stream that arrives after cancellation. Keep the Mac unlocked and awake for physical microphone/browser testing; a locked computer prevents Computer Use from inspecting browser prompts. A timeout alone does not establish a faulty microphone or a need to restart the system audio service.

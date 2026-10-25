@@ -100,3 +100,49 @@ Actual Chromium captures:
 The main agent inspected these rendered screens. Spacing, text, status, and controls remain readable.
 Automated accessibility checks pass for the key-result page and microphone dialog in the selected WCAG tags.
 The captures use explicit response and media fixtures. They do not prove a live key or physical microphone result.
+
+## Workspace management and inspector update — 2026-10-25
+
+The existing sidebar, session actions, and controls panel were reviewed in the running app before changes. The review found no sidebar item actions, a destructive session button detached from evidence, a fixed inspector width, and insufficient space beside the inspector scrollbar.
+
+Implemented item menus for agents, studies, and sessions with Rename, Pin/Unpin, and confirmed Delete. Agent/study names update their current records; session names are organizational metadata. Recorded snapshots are unchanged. Pin preferences survive server restart. Older sessions can be expanded with Show all sessions. Referenced agents remain protected; deleting a study clearly confirms its cascading local-data deletion.
+
+The session Delete action now sits in a separated record-action row below evidence. The inspector has a collapse/expand control and pointer/keyboard resizing, with persistent browser preferences. The scrollable panel reserves scrollbar space and adds inner padding. Phone drawers use a dimmed backdrop and can close through the header, backdrop, or Escape.
+
+Validation: TypeScript and production build pass; 177 unit/integration tests and all 32 Chromium workflows pass. New workflows cover name/pin persistence, protected and successful deletions, session-action placement, dragging, keyboard resizing, persisted width/collapse, and responsive overflow/spacing. Visual checks used synthetic data in the in-app browser. Saved responsive screenshots were inspected at 375, 768, 1024, 1440, and 1920 pixels wide. Automated accessibility checks are bounded to their tested rules and do not establish full accessibility compliance.
+
+Screenshots: `docs/verification/sidebar-controls-375.png`, `sidebar-controls-768.png`, `sidebar-controls-1024.png`, `sidebar-controls-1440.png`, and `sidebar-controls-1920.png`.
+
+The rapid-navigation test was corrected to wait for the new-agent creation response and matching heading before editing. Its earlier intermittent failure read the previous agent's name while creation was still pending; the trace showed that the edited new agent's draft had actually saved correctly.
+
+## Audio device lifecycle repair — 2026-10-25
+
+Addressed recurring microphone-loss reports, unbounded live speaker switching, and permission checks opening competing captures. Named built-in device rows resolve to system-default aliases when enumeration identifies the same hardware. Active checks reuse working capture or repair ended capture. Input replacement commits only after capture and sender replacement succeed, preserving current input on failure. Output switching uses a three-second deadline and a fresh system-output player on failure, without awaiting an unbounded playback promise. Cleanup cancels pending microphone acquisition and isolates late startup, device, playback, and end results from newer sessions. Intentional cleanup detaches old track-ended handlers. Permission feedback describes pending browser requests without assigning a hardware fault.
+
+Validation: TypeScript and production build pass; 181 unit/integration tests pass. New browser regressions exercise live capture reuse, built-in input/output aliases, repair after simulated track loss, preserved input after failed replacement, stalled speaker fallback, and a canceled connection failing after its successor connects. Existing microphone-dialog tests still cover permission failures and late-stream release. These use synthetic media and cannot establish physical audio quality.
+
+Physical Chrome check: selected MacBook Pro Speakers (Built-in) without an idle UI freeze. The idle microphone request timed out. Native inspection then reported the Mac was locked; the user was asked to unlock it. Physical mic/speaker playback verification remains pending and must not be reported as passed. The frontend has been rebuilt in place without restarting the credential-holding server.
+
+Final automated result: all 34 Chromium workflows passed after adding credential cleanup to the new isolated audio fixture. The two audio lifecycle workflows passed again against the final rebuilt frontend. Build, type checking, and diff whitespace validation pass. The running Chrome tab was reloaded to the final frontend and left ready for the unlocked physical test.
+
+### Unlocked live follow-up
+
+After the user unlocked the Mac, the built-in microphone permission probe succeeded immediately in Chrome. Session `7225cc` connected with all 13 configured fields confirmed. During the live session, permission checks succeeded immediately; output switched System output -> MacBook Pro Speakers (Built-in) without freezing; input switched built-in -> system -> built-in without a loss notice. Actual input speech/transcription and automatic model responses appeared. Browser evidence included playback.ready before and after the output choices, and provider evidence included output_audio_buffer.started/stopped. Audible speaker confirmation was requested from the user; generated speech/playback evidence alone is not proof of sound heard in the room.
+
+The user confirmed hearing Sona respond through the built-in speakers and seeing the transcript. The live session ended cleanly after 47 seconds. The reported permission-check delay and built-in-speaker freeze did not recur in this unlocked test. No external audio device, system audio-service restart, or API-key replacement was needed.
+
+## GitHub browser fixture correction — 2026-10-25
+
+The pull-request browser run failed before exercising startup cancellation. Its retained trace showed the test's credential and agent setup returning HTTP 401: the page and test API client could issue cold bootstrap requests concurrently and receive mismatched cookie/token pairs. The existing agent from the prior test hid the failed setup, and the test waited for a provider request that could never occur. The branch-push browser run and all platform checks passed at the same commit.
+
+The audio fixture now establishes its local session and validates credential/agent creation before navigating to the app. The provider-request wait is bounded with an explicit assertion. Type checking passes; both audio workflows passed ten consecutive rounds (20 tests), followed by a successful full 34-workflow browser run. This correction changes test setup only; production security and microphone behavior are unchanged.
+
+## Connection import security and runtime compatibility — 2026-10-25
+
+Codex Security reviewed the current first-party boundaries with independent baseline, architecture, and focused import/frontend reviews. The scan recorded one conditional low-severity issue: published connection metadata could select ambient server credential names when used by a valid-callback library consumer. The shipped callback mismatch prevented ordinary MCP connection startup, so no unauthenticated application exposure or live credential disclosure is claimed. Coverage excludes exhaustive dependency-advisory, binary/reference-asset, and every-test/document review.
+
+External imports now reject credential environment selectors in all accepted shapes and reset publisher-provided tool/instruction/resource approvals. Built-in Google setup and the portable runtime's private owner-authored bindings use a separately named trusted API. Server-owned review metadata and a destination/OAuth binding digest preserve new reviewed credentials across restart; legacy records require re-review and cannot activate ambient credentials. Definition replacement removes omitted optional credential fields and rejects changes to approved credential destinations. Connection persistence omits undefined optional runtime fields before JSON storage.
+
+MCP construction accepts the actual shipped /api/oauth/callback and preserves the earlier supported loopback callback for library compatibility, with the original scheme/host/query/fragment restrictions. A real-client HTTP integration fixture covers the shipped callback, initiating browser-session binding, cross-site return navigation, and replay rejection. The portable example exposes /ready and keeps microphone tracks disabled until both browser media and provider configuration are ready; failure releases capture and ends the session.
+
+Validation: the synthetic credential-selection reproducer succeeded before the fix and is rejected afterward without network access or real secrets. Type checking, production build, all 201 unit/integration tests, and all 34 Chromium workflows pass. New tests cover direct/nested imports, provenance forgery, owner-binding persistence, tampered destinations, legacy quarantine, credential removal, real MCP callback construction, OAuth session/replay handling, and the actual portable browser entry's readiness/failure sequence. An independent read-only patch review found no concrete surviving bypass or regression. Live external OAuth account/scopes and writes remain untested; no new live authorization or tool write was performed.

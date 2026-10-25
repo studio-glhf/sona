@@ -1,4 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
+import {
+  SidebarItem,
+  itemLabel,
+  sortedItems,
+  type ItemKind,
+  type SidebarPreferences,
+} from "./SidebarItem";
 import {
   Activity,
   BookOpen,
@@ -14,6 +21,7 @@ import {
   UserRound,
   X,
   Copy,
+  PanelRightOpen,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -72,6 +80,143 @@ export default function App() {
     [history, setHistory] = useState<Session | null>(null),
     [rename, setRename] = useState(false),
     [nextCondition, setNextCondition] = useState<Json>(null);
+  const [sidebarPrefs, setSidebarPrefs] = useState<SidebarPreferences>({});
+  const [showAllSessions, setShowAllSessions] = useState(false);
+  const [management, setManagement] = useState<{
+    kind: ItemKind;
+    id: string;
+    name: string;
+    operation: "rename" | "delete";
+  } | null>(null);
+  const [itemName, setItemName] = useState("");
+  const [itemError, setItemError] = useState("");
+  const [itemBusy, setItemBusy] = useState(false);
+  const [controlsCollapsed, setControlsCollapsed] = useState(
+    () => localStorage.getItem("sona-controls-collapsed") === "true",
+  );
+  const [controlsWidth, setControlsWidth] = useState(() =>
+    Math.max(
+      300,
+      Math.min(560, Number(localStorage.getItem("sona-controls-width")) || 360),
+    ),
+  );
+  useEffect(() => {
+    localStorage.setItem("sona-controls-collapsed", String(controlsCollapsed));
+  }, [controlsCollapsed]);
+  useEffect(() => {
+    localStorage.setItem("sona-controls-width", String(controlsWidth));
+  }, [controlsWidth]);
+  const resizeControls = (width: number) =>
+    setControlsWidth(
+      Math.max(
+        300,
+        Math.min(
+          560,
+          window.innerWidth - (window.innerWidth > 1280 ? 240 : 0) - 440,
+          width,
+        ),
+      ),
+    );
+  useEffect(() => {
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSidebar(false);
+        setControls(false);
+      }
+    };
+    if (sidebar || controls) document.addEventListener("keydown", dismiss);
+    return () => document.removeEventListener("keydown", dismiss);
+  }, [sidebar, controls]);
+  const collapseControls = () => {
+    if (window.innerWidth <= 900) setControls(false);
+    else setControlsCollapsed(true);
+  };
+  const manageItem = async (
+    kind: ItemKind,
+    item: Json,
+    operation: "rename" | "pin" | "delete",
+  ) => {
+    if (operation === "pin") {
+      try {
+        setSidebarPrefs(
+          await api(
+            `/sidebar/${kind}/${item.id}`,
+            { pinned: !sidebarPrefs[`${kind}:${item.id}`]?.pinned },
+            "PATCH",
+          ),
+        );
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    } else {
+      const name = itemLabel(kind, item, sidebarPrefs);
+      setItemName(name);
+      setItemError("");
+      setManagement({ kind, id: item.id, name, operation });
+    }
+  };
+  const saveItem = async () => {
+    if (!management) return;
+    setItemBusy(true);
+    setItemError("");
+    try {
+      if (management.operation === "rename") {
+        if (management.kind === "agents" && agent?.id === management.id) {
+          await api(
+            `/agents/${agent.id}`,
+            { name: agent.name, draft: agent.draft },
+            "PATCH",
+          );
+        }
+        setSidebarPrefs(
+          await api(
+            `/sidebar/${management.kind}/${management.id}`,
+            { name: itemName },
+            "PATCH",
+          ),
+        );
+        if (management.kind === "agents") {
+          const next = await api(`/agents/${management.id}`);
+          setAgents((old) =>
+            old.map((item) => (item.id === next.id ? next : item)),
+          );
+        } else if (management.kind === "studies") {
+          const next = await api(`/studies/${management.id}`);
+          setStudies((old) =>
+            old.map((item) => (item.id === next.id ? next : item)),
+          );
+        }
+      } else {
+        if (
+          (management.kind === "sessions" &&
+            voice.session?.id === management.id) ||
+          (management.kind === "studies" &&
+            voice.session?.studyId === management.id)
+        ) {
+          if (voice.active) await voice.end();
+          voice.clearSession();
+        }
+        await api(`/${management.kind}/${management.id}`, undefined, "DELETE");
+        if (management.kind === "sessions" && history?.id === management.id)
+          setHistory(null);
+        if (management.kind === "studies" && studyId === management.id) {
+          setStudyId("");
+          setPage("workspace");
+          setHistory(null);
+        }
+        if (management.kind === "agents" && selected === management.id) {
+          setSelected("");
+          setHistory(null);
+        }
+        await refresh();
+      }
+      setManagement(null);
+    } catch (e) {
+      setItemError((e as Error).message);
+    } finally {
+      setItemBusy(false);
+    }
+  };
   const voice = useVoice();
   const agent = agents.find((a) => a.id === selected) ?? agents[0];
   const study = studies.find((s) => s.id === studyId);
@@ -83,6 +228,7 @@ export default function App() {
     const result = await api("/bootstrap");
     setLocalToken(result.csrfToken);
     setData(result);
+    setSidebarPrefs(result.sidebar ?? {});
     setAgents(collection(result.agents, "agents"));
     setStudies(collection(result.studies, "studies"));
     setSessions(collection(result.sessions, "sessions"));
@@ -408,10 +554,27 @@ export default function App() {
       </main>
     );
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell ${controlsCollapsed ? "controls-collapsed" : ""}`}
+      style={{ "--controls-width": `${controlsWidth}px` } as CSSProperties}
+    >
       <a className="skip-link" href="#main">
         Skip to workspace
       </a>
+      {sidebar && (
+        <button
+          className="drawer-backdrop navigation-backdrop"
+          aria-label="Dismiss navigation"
+          onClick={() => setSidebar(false)}
+        />
+      )}
+      {controls && !controlsCollapsed && (
+        <button
+          className="drawer-backdrop inspector-backdrop"
+          aria-label="Dismiss agent controls"
+          onClick={() => setControls(false)}
+        />
+      )}
       <aside
         className={`sidebar ${sidebar ? "open" : ""}`}
         aria-label="Workspace navigation"
@@ -450,19 +613,18 @@ export default function App() {
         <nav>
           <div className="nav-group">
             <h2>Agents</h2>
-            {agents.map((a) => (
-              <button
+            {sortedItems(agents, "agents", sidebarPrefs).map((a) => (
+              <SidebarItem
                 key={a.id}
-                className={
+                name={itemLabel("agents", a, sidebarPrefs)}
+                icon={<Activity size={18} />}
+                selected={
                   page === "workspace" && agent?.id === a.id && !history
-                    ? "selected"
-                    : ""
                 }
-                onClick={() => choose(a.id)}
-              >
-                <Activity size={19} />
-                <span>{a.name}</span>
-              </button>
+                pinned={sidebarPrefs[`agents:${a.id}`]?.pinned}
+                onSelect={() => choose(a.id)}
+                onAction={(action) => void manageItem("agents", a, action)}
+              />
             ))}
           </div>
           <div className="nav-group">
@@ -490,39 +652,53 @@ export default function App() {
                 <Plus size={17} />
               </button>
             </div>
-            {studies.map((s) => (
-              <button
+            {sortedItems(studies, "studies", sidebarPrefs).map((s) => (
+              <SidebarItem
                 key={s.id}
-                className={
-                  page === "study" && studyId === s.id ? "selected" : ""
-                }
-                onClick={() => {
+                name={itemLabel("studies", s, sidebarPrefs)}
+                icon={<BookOpen size={18} />}
+                selected={page === "study" && studyId === s.id}
+                pinned={sidebarPrefs[`studies:${s.id}`]?.pinned}
+                onSelect={() => {
                   setStudyId(s.id);
                   setPage("study");
                   setSidebar(false);
                 }}
-              >
-                <BookOpen size={18} />
-                <span>{s.name}</span>
-              </button>
+                onAction={(action) => void manageItem("studies", s, action)}
+              />
             ))}
           </div>
           <div className="nav-group">
             <h2>Recent sessions</h2>
-            {sessions.slice(0, 8).map((s) => (
-              <button key={s.id} onClick={() => void openSession(s.id)}>
-                <Clock3 size={18} />
-                <span>
-                  Session {s.id.slice(0, 6)}
-                  <small>
-                    {s.startedAt
-                      ? new Date(s.startedAt).toLocaleTimeString()
-                      : ""}{" "}
-                    · {s.kind === "quick" ? "Quick test" : "Study"}
-                  </small>
-                </span>
+            {sortedItems(sessions, "sessions", sidebarPrefs)
+              .filter(
+                (s, index) =>
+                  showAllSessions ||
+                  index < 8 ||
+                  sidebarPrefs[`sessions:${s.id}`]?.pinned,
+              )
+              .map((s) => (
+                <SidebarItem
+                  key={s.id}
+                  name={itemLabel("sessions", s, sidebarPrefs)}
+                  icon={<Clock3 size={17} />}
+                  detail={`${s.startedAt ? new Date(s.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""} / ${s.kind === "quick" ? "Quick test" : "Study"}`}
+                  selected={(history?.id ?? voice.session?.id) === s.id}
+                  pinned={sidebarPrefs[`sessions:${s.id}`]?.pinned}
+                  onSelect={() => void openSession(s.id)}
+                  onAction={(action) => void manageItem("sessions", s, action)}
+                />
+              ))}
+            {sessions.length > 8 && (
+              <button
+                className="show-sessions"
+                onClick={() => setShowAllSessions((v) => !v)}
+              >
+                {showAllSessions
+                  ? "Show fewer sessions"
+                  : `Show all ${sessions.length} sessions`}
               </button>
-            ))}
+            )}
           </div>
         </nav>
         <div className="nav-bottom">
@@ -560,7 +736,13 @@ export default function App() {
           </button>
           <span>Sona</span>
           {page === "workspace" && agent && (
-            <button onClick={() => setControls((v) => !v)}>
+            <button
+              aria-expanded={controls}
+              onClick={() => {
+                setControlsCollapsed(false);
+                setControls(true);
+              }}
+            >
               <SlidersHorizontal size={18} />
               Agent controls
             </button>
@@ -579,7 +761,11 @@ export default function App() {
                       disabled={Boolean(shown)}
                     >
                       <h1>
-                        {shown?.snapshot?.configuration?.name ?? agent.name}
+                        {shown
+                          ? (sidebarPrefs[`sessions:${shown.id}`]?.name ??
+                            shown.snapshot?.configuration?.name ??
+                            agent.name)
+                          : itemLabel("agents", agent, sidebarPrefs)}
                       </h1>
                     </button>
                     <span className="badge">
@@ -628,9 +814,15 @@ export default function App() {
                   {voice.error && (
                     <Notice error>
                       {voice.error}
-                      <button onClick={() => void voice.resumeAudio()}>
-                        Resume audio
-                      </button>
+                      {voice.error.includes("playback") ? (
+                        <button onClick={() => void voice.resumeAudio()}>
+                          Resume audio
+                        </button>
+                      ) : (
+                        <button onClick={() => setDevices(true)}>
+                          Check microphone
+                        </button>
+                      )}
                     </Notice>
                   )}
                   <SessionControls
@@ -638,60 +830,6 @@ export default function App() {
                     onStart={() => void start()}
                     onDevices={() => setDevices(true)}
                   />
-                  {shown && !voice.active && (
-                    <div className="row center">
-                      {recorded && nextCondition && activeStudy && (
-                        <button
-                          className="primary"
-                          onClick={() =>
-                            void onStudyRun(activeStudy, nextCondition, {
-                              participantCode: shown.participantCode,
-                              researcherParticipant:
-                                shown.researcherParticipant,
-                            })
-                          }
-                        >
-                          Start next run · {nextCondition.name}
-                        </button>
-                      )}
-                      {recorded && (
-                        <ActionButton
-                          action={() =>
-                            download(
-                              `/sessions/${shown.id}/export`,
-                              "sona-session.json",
-                            )
-                          }
-                        >
-                          <Download size={16} />
-                          Export session
-                        </ActionButton>
-                      )}
-                      <button
-                        onClick={async () => {
-                          if (
-                            confirm(
-                              "Delete this local session record? Exports and external actions are separate.",
-                            )
-                          ) {
-                            try {
-                              await api(
-                                `/sessions/${shown.id}`,
-                                undefined,
-                                "DELETE",
-                              );
-                              setHistory(null);
-                              await refresh();
-                            } catch (e) {
-                              setError((e as Error).message);
-                            }
-                          }
-                        }}
-                      >
-                        Delete session
-                      </button>
-                    </div>
-                  )}
                 </section>
                 <Evidence
                   events={evidence}
@@ -703,6 +841,48 @@ export default function App() {
                   }
                   active={voice.active}
                 />
+                {shown && !voice.active && (
+                  <section
+                    className="session-record-actions"
+                    aria-label="Session record actions"
+                  >
+                    {recorded && nextCondition && activeStudy && (
+                      <button
+                        className="primary"
+                        onClick={() =>
+                          void onStudyRun(activeStudy, nextCondition, {
+                            participantCode: shown.participantCode,
+                            researcherParticipant: shown.researcherParticipant,
+                          })
+                        }
+                      >
+                        Start next run · {nextCondition.name}
+                      </button>
+                    )}
+                    {recorded && (
+                      <ActionButton
+                        action={() =>
+                          download(
+                            `/sessions/${shown.id}/export`,
+                            "sona-session.json",
+                          )
+                        }
+                      >
+                        <Download size={16} />
+                        Export session
+                      </ActionButton>
+                    )}
+                    <button
+                      className="session-delete"
+                      onClick={() =>
+                        void manageItem("sessions", shown, "delete")
+                      }
+                    >
+                      <Trash2 size={15} />
+                      Delete session
+                    </button>
+                  </section>
+                )}
               </>
             ) : (
               <div className="welcome">
@@ -733,7 +913,10 @@ export default function App() {
             hidden={page !== "study" || studyId !== item.id}
           >
             <StudyPage
-              study={item}
+              study={{
+                ...item,
+                name: itemLabel("studies", item, sidebarPrefs),
+              }}
               agents={agents}
               visible={page === "study" && studyId === item.id}
               sessionRevision={sessions
@@ -794,22 +977,81 @@ export default function App() {
       {agent && (
         <div
           hidden={page !== "workspace"}
-          className={`controls-wrap ${controls ? "open" : ""}`}
+          className={`controls-wrap ${controls ? "open" : ""} ${controlsCollapsed ? "collapsed" : ""}`}
         >
-          <button className="controls-close" onClick={() => setControls(false)}>
-            Close controls
-          </button>
-          <AgentPanel
-            agent={agent}
-            onChange={update}
-            saving={saved}
-            active={voice.active}
-            applied={
-              history?.providerEvidence ?? voice.runtime.providerEvidence
-            }
-            connections={connections}
-            onConnections={() => setPage("connections")}
-          />
+          {controlsCollapsed && (
+            <button
+              className="controls-expand"
+              aria-label="Expand agent controls"
+              onClick={() => {
+                setControlsCollapsed(false);
+              }}
+            >
+              <PanelRightOpen size={20} />
+              <span>Agent controls</span>
+            </button>
+          )}
+          {!controlsCollapsed && (
+            <div
+              className="controls-resize"
+              role="separator"
+              aria-label="Resize agent controls"
+              aria-orientation="vertical"
+              aria-valuemin={300}
+              aria-valuemax={560}
+              aria-valuenow={controlsWidth}
+              tabIndex={0}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                document.body.classList.add("resizing-controls");
+              }}
+              onPointerMove={(e) => {
+                if (e.currentTarget.hasPointerCapture(e.pointerId))
+                  resizeControls(window.innerWidth - e.clientX);
+              }}
+              onPointerUp={(e) => {
+                e.currentTarget.releasePointerCapture(e.pointerId);
+                document.body.classList.remove("resizing-controls");
+              }}
+              onLostPointerCapture={() =>
+                document.body.classList.remove("resizing-controls")
+              }
+              onDoubleClick={() => setControlsWidth(360)}
+              onKeyDown={(e) => {
+                if (
+                  ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)
+                ) {
+                  e.preventDefault();
+                  resizeControls(
+                    e.key === "Home"
+                      ? 300
+                      : e.key === "End"
+                        ? 560
+                        : controlsWidth + (e.key === "ArrowLeft" ? 20 : -20),
+                  );
+                }
+              }}
+            />
+          )}
+          <div
+            className="controls-content"
+            hidden={controlsCollapsed}
+            id="agent-controls-content"
+          >
+            <AgentPanel
+              onCollapse={collapseControls}
+              agent={agent}
+              onChange={update}
+              saving={saved}
+              active={voice.active}
+              applied={
+                history?.providerEvidence ?? voice.runtime.providerEvidence
+              }
+              connections={connections}
+              onConnections={() => setPage("connections")}
+            />
+          </div>
         </div>
       )}
       {devices && <Devices voice={voice} onClose={() => setDevices(false)} />}{" "}
@@ -824,6 +1066,81 @@ export default function App() {
           onClose={() => setRun(null)}
         />
       )}{" "}
+      {management && (
+        <Modal
+          title={`${management.operation === "rename" ? "Rename" : "Delete"} ${{ agents: "agent", studies: "study", sessions: "session" }[management.kind]}`}
+          onClose={() => {
+            if (!itemBusy) setManagement(null);
+          }}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveItem();
+            }}
+          >
+            {management.operation === "rename" ? (
+              <label className="field">
+                Name
+                <input
+                  autoFocus
+                  aria-label="Name"
+                  maxLength={120}
+                  value={itemName}
+                  onChange={(e) => setItemName(e.target.value)}
+                  required
+                />
+                <small>
+                  This label helps organize your workspace. Recorded experiment
+                  snapshots stay fixed.
+                </small>
+              </label>
+            ) : (
+              <>
+                <p>Delete “{management.name}” from this local workspace?</p>
+                <p className="muted">
+                  {management.kind === "studies"
+                    ? "This also deletes the study’s runs, assignments, consent records, and local evidence."
+                    : management.kind === "agents"
+                      ? "Agents referenced by sessions or study conditions are protected. Remove those references before deleting the agent."
+                      : "This permanently removes the local session and its evidence. A running voice session will end first."}{" "}
+                  Exports and external actions are separate.
+                </p>
+              </>
+            )}
+            {itemError && (
+              <p role="alert" className="error-text">
+                {itemError}
+              </p>
+            )}
+            <div className="dialog-actions">
+              <button
+                type="button"
+                disabled={itemBusy}
+                onClick={() => setManagement(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className={
+                  management.operation === "delete" ? "danger" : "primary"
+                }
+                disabled={
+                  itemBusy ||
+                  (management.operation === "rename" && !itemName.trim())
+                }
+              >
+                {itemBusy
+                  ? "Saving…"
+                  : management.operation === "rename"
+                    ? "Save name"
+                    : `Delete ${{ agents: "agent", studies: "study", sessions: "session" }[management.kind]}`}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
       {rename && agent && (
         <Modal title="Agent details" onClose={() => setRename(false)}>
           <label className="field">

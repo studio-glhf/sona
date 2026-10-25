@@ -58,6 +58,9 @@ export interface ConnectionDefinition {
   readRetries: number;
 }
 export interface ConnectionRecord extends ConnectionDefinition {
+  /** Server-owned review metadata; never accepted from imported definitions. */
+  reviewVersion?: 1;
+  credentialBindingHash?: string;
   status: ConnectionStatus;
   accountId?: string;
   accountVerified: boolean;

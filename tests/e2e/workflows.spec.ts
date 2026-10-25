@@ -202,7 +202,7 @@ test("keyboard, automated accessibility and laptop layout", async ({
     .click();
   await expect(page.getByLabel("Find a parameter")).toBeVisible();
   await page
-    .getByRole("button", { name: "Close controls", exact: true })
+    .getByRole("button", { name: "Collapse agent controls", exact: true })
     .click();
 });
 
@@ -210,8 +210,12 @@ test("a draft survives leaving the editor before its debounce timer finishes", a
   page,
 }) => {
   await page.goto("/");
+  const created = page.waitForResponse(
+    (r) => r.request().method() === "POST" && r.url().endsWith("/api/agents"),
+  );
   await page.getByRole("button", { name: "New agent", exact: true }).click();
-  const name = await page.locator(".workspace-header h1").innerText();
+  const { name } = await (await created).json();
+  await expect(page.locator(".workspace-header h1")).toHaveText(name);
   await page.getByRole("tab", { name: "Instructions", exact: true }).click();
   await page
     .getByLabel("Agent instructions", { exact: true })

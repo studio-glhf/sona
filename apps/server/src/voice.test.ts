@@ -36,7 +36,7 @@ class Socket extends EventEmitter {
     this.socket.emit("close");
   }
 }
-async function setup() {
+async function setup(deferConfiguration = false) {
   let writes = 0;
   const dir = mkdtempSync(join(tmpdir(), "sona-voice-contract-")),
     store = createStore(dir),
@@ -97,7 +97,7 @@ async function setup() {
     onModelVerified() {},
     client,
     socketFactory: () => {
-      setTimeout(
+      if (!deferConfiguration) setTimeout(
         () =>
           socket.emit("event", {
             type: "session.created",
@@ -122,6 +122,7 @@ async function setup() {
   });
   resources.push({ store, voice, dir });
   await voice.connect(session.id, offer);
+  if (!deferConfiguration) await voice.waitUntilReady(session.id);
   const call = voice.calls.get(session.id)!;
   const event = async (e: any) => {
     await (voice as any).handle(call, e);
@@ -140,6 +141,18 @@ async function setup() {
   };
 }
 describe("voice coordinator contract fixtures", () => {
+  it("returns SDP before configuration and keeps actions gated until the provider confirms", async () => {
+    const r = await setup(true);
+    expect(r.call.ready).toBe(false);
+    expect(r.socket.sent).toContainEqual({ type: "session.update", session: { type: "realtime" } });
+    let ready = false;
+    const pending = r.voice.waitUntilReady(r.session.id).then(() => { ready = true; });
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    r.socket.emit("event", { type: "session.created", session: {} });
+    await pending;
+    expect(r.call.ready).toBe(true);
+  });
   it("redacts optional provider credentials before runtime inspection", async () => {
     const r = await setup();
     r.socket.emit("event", {
