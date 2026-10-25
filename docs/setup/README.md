@@ -260,3 +260,23 @@ Run `pnpm coverage:api` after a schema update. Compare the source hash and opera
 
 The API library preserves source defaults, constraints, and deprecation flags. Account access and lifecycle availability are separate checks.
 Do not infer current service availability from a successful schema compilation.
+
+## Organize your workspace
+
+Hover or focus an agent, study, or session in the left sidebar and open its three-dot action menu. Touch devices show the action button directly. Choose **Rename**, **Pin to top** / **Unpin**, or **Delete**. Names and pins remain after a reload or server restart. **Show all sessions** reveals older records.
+
+Session names organize the sidebar without changing the recorded configuration or study protocol. Agent and study renames update their current names; earlier snapshots remain fixed.
+
+Deletion requires a confirmation. Deleting a study also removes its local runs, assignments, consent records, and evidence. An agent referenced by sessions or study conditions is protected until those references are removed. Exports and actions already performed in external services are separate.
+
+The session **Delete** action is grouped below the evidence area, separate from live voice controls. The same action is available from the session's sidebar menu.
+
+Use the icon beside **Agent controls** to collapse the inspector. Select the collapsed rail to reopen it. Drag its left border to resize it on desktop; a focused border also responds to Left/Right arrows, Home, and End. Double-click the border to restore the default width. Width and collapse preferences are saved in this browser. On phones, controls open in a drawer with a dimmed backdrop; close it with its header icon, Escape, or the backdrop.
+
+## Audio device recovery
+
+When the built-in microphone and speakers are the system defaults, their named entries use the same system device path. Choosing those entries during a call does not reopen the microphone or unnecessarily switch the speaker engine.
+
+**Check microphone permission** reuses a live session input. If that input has ended, it attempts to replace it within the current voice connection. An idle check opens and releases a temporary input. A failed replacement preserves the working input and its mute preference. A speaker switch that stalls falls back to system output after three seconds.
+
+A browser microphone permission prompt can remain pending even after Sona's 15-second wait expires. Respond to the prompt or reload Sona before retrying. Sona prevents overlapping requests and releases any stream that arrives after cancellation. Keep the Mac unlocked and awake for physical microphone/browser testing; a locked computer prevents Computer Use from inspecting browser prompts. A timeout alone does not establish a faulty microphone or a need to restart the system audio service.

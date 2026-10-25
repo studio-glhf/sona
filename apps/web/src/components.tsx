@@ -190,6 +190,7 @@ export function Devices({
   }>({ state: "idle", message: "" });
   const mounted = useRef(false);
   const request = useRef(0);
+  const probeAbort = useRef<AbortController | null>(null);
   const previousInput = useRef(voice.input);
   useEffect(() => {
     mounted.current = true;
@@ -204,6 +205,7 @@ export function Devices({
     });
     return () => {
       mounted.current = false;
+      probeAbort.current?.abort();
       request.current++;
     };
   }, []);
@@ -228,14 +230,10 @@ export function Devices({
       );
       return;
     }
-    let stream: MediaStream | undefined;
+    const controller = new AbortController();
+    probeAbort.current = controller;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: voice.input ? { deviceId: { exact: voice.input } } : true,
-        video: false,
-      });
-      if (!stream.getAudioTracks().some((track) => track.readyState === "live"))
-        throw new DOMException("", "NotReadableError");
+      await voice.checkMicrophone(controller.signal);
     } catch (failure) {
       const name = failure instanceof Error ? failure.name : "";
       report(
@@ -244,19 +242,21 @@ export function Devices({
           ? "Allow microphone access for Sona in your browser and system settings. Then try again."
           : ["NotFoundError", "DevicesNotFoundError"].includes(name)
             ? "No microphone is available. Connect a microphone, then try again."
-            : name === "OverconstrainedError"
-              ? "The selected microphone is unavailable. Choose another microphone, then try again."
-              : ["NotReadableError", "TrackStartError", "AbortError"].includes(
-                    name,
-                  )
-                ? "The microphone could not open. Close other apps that use it, then try again."
-                : "Could not check microphone access. Check your device and browser settings, then try again.",
+            : ["TimeoutError", "InvalidStateError"].includes(name)
+              ? (failure as Error).message
+              : name === "OverconstrainedError"
+                ? "The selected microphone is unavailable. Choose another microphone, then try again."
+                : [
+                      "NotReadableError",
+                      "TrackStartError",
+                      "AbortError",
+                    ].includes(name)
+                  ? "Chrome could not open the microphone. Check its permission prompt, then try again."
+                  : "Could not check microphone access. Check your device and browser settings, then try again.",
       );
       return;
     } finally {
-      // This check does not use the active call's stream or send any audio.
-      // Release temporary tracks even when the dialog closes or a refresh fails.
-      stream?.getTracks().forEach((track) => track.stop());
+      if (probeAbort.current === controller) probeAbort.current = null;
     }
     if (!mounted.current || current !== request.current) return;
     try {
@@ -275,7 +275,7 @@ export function Devices({
         Microphone
         <select
           value={voice.input}
-          disabled={feedback.state === "checking"}
+          disabled={feedback.state === "checking" || !!voice.deviceBusy}
           onChange={(e) => void voice.changeInput(e.target.value)}
         >
           <option value="">System microphone</option>
@@ -293,6 +293,7 @@ export function Devices({
           Output
           <select
             value={voice.output}
+            disabled={feedback.state === "checking" || !!voice.deviceBusy}
             onChange={(e) => void voice.changeOutput(e.target.value)}
           >
             <option value="">System output</option>
@@ -316,7 +317,7 @@ export function Devices({
         microphone permission.
       </p>
       <button
-        disabled={feedback.state === "checking"}
+        disabled={feedback.state === "checking" || !!voice.deviceBusy}
         onClick={() => void checkMicrophone()}
       >
         {feedback.state === "checking"
@@ -329,7 +330,11 @@ export function Devices({
         aria-atomic="true"
         className={feedback.state === "error" ? "error-text" : "muted"}
       >
-        {feedback.message}
+        {voice.deviceBusy
+          ? voice.deviceBusy === "input"
+            ? "Switching microphone…"
+            : "Switching speaker…"
+          : voice.deviceFeedback || feedback.message}
       </p>
     </Modal>
   );

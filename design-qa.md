@@ -100,3 +100,33 @@ Actual Chromium captures:
 The main agent inspected these rendered screens. Spacing, text, status, and controls remain readable.
 Automated accessibility checks pass for the key-result page and microphone dialog in the selected WCAG tags.
 The captures use explicit response and media fixtures. They do not prove a live key or physical microphone result.
+
+## Workspace management and inspector update — 2026-10-25
+
+The existing sidebar, session actions, and controls panel were reviewed in the running app before changes. The review found no sidebar item actions, a destructive session button detached from evidence, a fixed inspector width, and insufficient space beside the inspector scrollbar.
+
+Implemented item menus for agents, studies, and sessions with Rename, Pin/Unpin, and confirmed Delete. Agent/study names update their current records; session names are organizational metadata. Recorded snapshots are unchanged. Pin preferences survive server restart. Older sessions can be expanded with Show all sessions. Referenced agents remain protected; deleting a study clearly confirms its cascading local-data deletion.
+
+The session Delete action now sits in a separated record-action row below evidence. The inspector has a collapse/expand control and pointer/keyboard resizing, with persistent browser preferences. The scrollable panel reserves scrollbar space and adds inner padding. Phone drawers use a dimmed backdrop and can close through the header, backdrop, or Escape.
+
+Validation: TypeScript and production build pass; 177 unit/integration tests and all 32 Chromium workflows pass. New workflows cover name/pin persistence, protected and successful deletions, session-action placement, dragging, keyboard resizing, persisted width/collapse, and responsive overflow/spacing. Visual checks used synthetic data in the in-app browser. Saved responsive screenshots were inspected at 375, 768, 1024, 1440, and 1920 pixels wide. Automated accessibility checks are bounded to their tested rules and do not establish full accessibility compliance.
+
+Screenshots: `docs/verification/sidebar-controls-375.png`, `sidebar-controls-768.png`, `sidebar-controls-1024.png`, `sidebar-controls-1440.png`, and `sidebar-controls-1920.png`.
+
+The rapid-navigation test was corrected to wait for the new-agent creation response and matching heading before editing. Its earlier intermittent failure read the previous agent's name while creation was still pending; the trace showed that the edited new agent's draft had actually saved correctly.
+
+## Audio device lifecycle repair — 2026-10-25
+
+Addressed recurring microphone-loss reports, unbounded live speaker switching, and permission checks opening competing captures. Named built-in device rows resolve to system-default aliases when enumeration identifies the same hardware. Active checks reuse working capture or repair ended capture. Input replacement commits only after capture and sender replacement succeed, preserving current input on failure. Output switching uses a three-second deadline and a fresh system-output player on failure, without awaiting an unbounded playback promise. Cleanup cancels pending microphone acquisition and isolates late startup, device, playback, and end results from newer sessions. Intentional cleanup detaches old track-ended handlers. Permission feedback describes pending browser requests without assigning a hardware fault.
+
+Validation: TypeScript and production build pass; 181 unit/integration tests pass. New browser regressions exercise live capture reuse, built-in input/output aliases, repair after simulated track loss, preserved input after failed replacement, stalled speaker fallback, and a canceled connection failing after its successor connects. Existing microphone-dialog tests still cover permission failures and late-stream release. These use synthetic media and cannot establish physical audio quality.
+
+Physical Chrome check: selected MacBook Pro Speakers (Built-in) without an idle UI freeze. The idle microphone request timed out. Native inspection then reported the Mac was locked; the user was asked to unlock it. Physical mic/speaker playback verification remains pending and must not be reported as passed. The frontend has been rebuilt in place without restarting the credential-holding server.
+
+Final automated result: all 34 Chromium workflows passed after adding credential cleanup to the new isolated audio fixture. The two audio lifecycle workflows passed again against the final rebuilt frontend. Build, type checking, and diff whitespace validation pass. The running Chrome tab was reloaded to the final frontend and left ready for the unlocked physical test.
+
+### Unlocked live follow-up
+
+After the user unlocked the Mac, the built-in microphone permission probe succeeded immediately in Chrome. Session `7225cc` connected with all 13 configured fields confirmed. During the live session, permission checks succeeded immediately; output switched System output -> MacBook Pro Speakers (Built-in) without freezing; input switched built-in -> system -> built-in without a loss notice. Actual input speech/transcription and automatic model responses appeared. Browser evidence included playback.ready before and after the output choices, and provider evidence included output_audio_buffer.started/stopped. Audible speaker confirmation was requested from the user; generated speech/playback evidence alone is not proof of sound heard in the room.
+
+The user confirmed hearing Sona respond through the built-in speakers and seeing the transcript. The live session ended cleanly after 47 seconds. The reported permission-check delay and built-in-speaker freeze did not recur in this unlocked test. No external audio device, system audio-service restart, or API-key replacement was needed.

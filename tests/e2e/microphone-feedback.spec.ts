@@ -152,7 +152,7 @@ for (const [errorName, guidance] of [
   ],
   [
     "NotReadableError",
-    "The microphone could not open. Close other apps that use it, then try again.",
+    "Chrome could not open the microphone. Check its permission prompt, then try again.",
   ],
   [
     "NotFoundError",

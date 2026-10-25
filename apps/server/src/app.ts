@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { updateSidebar } from "./sidebar.js";
 import serveStatic from "@fastify/static";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -171,6 +172,7 @@ export async function createApp(options: AppOptions) {
   }));
   app.get("/api/bootstrap", async (req, reply) => ({
     csrfToken: security.bootstrap(req, reply),
+    sidebar: store.metadata.get("sidebar") ?? {},
     version: "1.1.1",
     agents: store.agents.list(),
     studies: store.studies.list(),
@@ -201,6 +203,9 @@ export async function createApp(options: AppOptions) {
       parseAgentConfig(body(req).before),
       parseAgentConfig(body(req).after),
     ),
+  );
+  app.patch("/api/sidebar/:kind/:id", async (req) =>
+    updateSidebar(store, (req.params as any).kind, id(req), body(req)),
   );
   app.get("/api/agents", async () => store.agents.list());
   app.post("/api/agents", async (req) => {
@@ -450,6 +455,9 @@ export async function createApp(options: AppOptions) {
   app.get("/api/sessions/:id", async (req) => sessionDetail(id(req)));
   app.post("/api/sessions/:id/connect", async (req) =>
     voice.connect(id(req), body(req).sdp),
+  );
+  app.post("/api/sessions/:id/ready", async (req) =>
+    voice.waitUntilReady(id(req)),
   );
   app.post("/api/sessions/:id/control", async (req) =>
     voice.control(id(req), body(req).command),

@@ -35,6 +35,7 @@ type Call = {
   config: AgentConfig;
   active: boolean;
   ready: boolean;
+  configured?: Promise<void>;
   speaking?: boolean;
   error?: string;
   playbackBlocked?: boolean;
@@ -361,7 +362,20 @@ export class VoiceService {
           }
         });
       });
-      await configured;
+      // An attached sideband need not replay session.created. Request the
+      // effective configuration explicitly after listeners are installed.
+      const requestConfiguration = () => {
+        if (call.active) socket.send({ type: "session.update", session: { type: "realtime" } } as any);
+      };
+      if (socket.socket.readyState === 1) requestConfiguration();
+      else socket.socket.once("open", requestConfiguration);
+      // Return SDP before waiting for media-session events: the browser needs
+      // the answer to complete WebRTC negotiation. Keep actions gated by ready.
+      call.configured = configured;
+      void configured.catch(async (error) => {
+        call.error = redact(error instanceof Error ? error.message : "Voice configuration failed.", this.secrets);
+        await this.end(id, "configuration_failed");
+      });
       if (!call.active)
         throw new Error(call.error ?? "The connection was canceled.");
       // Bounded default session duration, disclosed by the interface. This is not an invoice cap.
@@ -375,6 +389,13 @@ export class VoiceService {
       await this.end(id, "connection_failed");
       throw error;
     }
+  }
+  async waitUntilReady(id: string) {
+    const call = this.calls.get(id);
+    if (!call?.configured) throw new Error("The voice connection has not started.");
+    await call.configured;
+    if (!call.active || !call.ready) throw new Error(call.error ?? "The connection was canceled.");
+    return { ready: true };
   }
   private async dispatch(call: Call, pending: Pending) {
     try {

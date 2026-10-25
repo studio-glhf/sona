@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Search,
+  PanelRightClose,
   Braces,
   History,
   Download,
@@ -25,6 +26,7 @@ const voices = [
 ];
 export function AgentPanel({
   agent,
+  onCollapse,
   onChange,
   saving,
   active,
@@ -33,6 +35,7 @@ export function AgentPanel({
   onConnections,
 }: {
   agent: Agent;
+  onCollapse: () => void;
   onChange: (config: Json) => void;
   saving: string;
   active: boolean;
@@ -75,7 +78,17 @@ export function AgentPanel({
   return (
     <aside className="agent-panel" aria-label="Agent controls">
       <header>
-        <h2>Agent controls</h2>
+        <div className="panel-heading">
+          <h2>Agent controls</h2>
+          <button
+            className="icon"
+            onClick={onCollapse}
+            aria-label="Collapse agent controls"
+            title="Collapse agent controls"
+          >
+            <PanelRightClose size={19} />
+          </button>
+        </div>
         <div className="search">
           <Search size={17} />
           <input
